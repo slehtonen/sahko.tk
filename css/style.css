@@ -1,0 +1,44 @@
+body {
+    font-family: 'Open Sans', sans-serif;
+}
+#stats {
+    padding-left:5px;
+    padding-top:5px;
+}
+td {padding-right:1.5em;
+    font-size: 1rem;}
+#container {
+    height: 80%;
+    max-height:600px;
+}
+
+.highcharts-tooltip {
+  z-index: 9998;
+}
+
+.margin10 {
+    padding-top:0.6em;
+    padding-bottom: 0.6em;
+}
+.info-font {
+    font-size:1.3em;
+}
+
+.bluebg {
+    background-color:#677077;
+    color:#FFF;
+}
+
+#top_bar {
+    background-color:#677077;
+}
+
+#faq {
+    margin-top:1em;
+    padding-bottom:2em;
+    background-color:#252839;
+    color:#b5b5b7;
+}
+#faq h3 {
+    color:#d3d3d3;
+}

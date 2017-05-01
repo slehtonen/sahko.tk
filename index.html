@@ -1,205 +1,79 @@
-<html>
-<head>
+<html lang="en">
+  <head>
     <meta charset="utf-8">
-    <meta name="description" content="Pörssisähkön hinta Nordpoolista.">
-    <meta name="keywords" content="Sähkö, hinta, nordpool, alv, päivittäin">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Pörssisähkön tuntihinta Nordpoolista.">
+    <meta name="keywords" content="Sähkö, hinta, nordpool, alv, päivittäin, pörssisähkö, pörssi">
     <link href='https://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
-    <style>
-        @media only screen and (max-width: 800px) {
-            #some-element { display: none; }
-        }
-        @media only screen and (max-height: 700px) {
-            #some-element { display: none; }
-        }
-        body {
-            font-family: 'Open Sans', sans-serif;
-        }
-        #stats {
-            padding-left:5px;
-            padding-top:5px;
-        }
-        td {padding-right:1.5em;
-            font-size: 1rem;}
-        #container {
-            height: 80%;
-            max-height:600px;
-        }
-        #disclaimer {
-            text-align: center;
-        }
-    </style>
+    <link href="bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="css/style.css" rel="stylesheet">
     <title>Nord Pool spot hinnat (sis. ALV)</title>
 </head>
 <body>
+<div class="container-fluid" id="top_bar">
+    <div class="row">
+        <div class="container">
+             <div class="row">
+                 <div class="col-xs-6 col-sm-3 margin10 bluebg w-25 text-center">
+                     <span class="info-font">Hinta nyt</span><br /><span id="price_now"></span>
+                 </div>
+                 <div class="col-xs-6 col-sm-3 bluebg text-center margin10">
+                     <span class="info-font">7 vrk keskihinta</span><br /><span id="avg"></span>
+                 </div>
+                 <div class="col-xs-6 col-sm-3 bluebg text-center margin10">
+                     <span class="info-font">Alin tänään</span><br /><span id="min_price"></span>
+                 </div>
+                 <div class="col-xs-6 col-sm-3 bluebg text-center margin10">
+                     <span class="info-font">Ylin tänään</span><br /><span id="max_price"></span>
+                 </div>
+             </div>
+         </div>
+     </div>
+ </div>
+ <div class="container">
+    <div class="row">
+        <div id="container" style="min-width: 310px; min-height: 310px; margin: 0 auto">
+            <center><img src="load.gif" alt="loading" /></center>
+        </div>
+    </div>
+</div>
+<div class="container-fluid" id="faq">
+    <div class="row">
+        <div class="container">
+            <div class="row">
+                <div>
+                    <h3>
+                    Mihin tällä sivulla näkyvä sähkön hinta perustuu?
+                    </h3>
+                    Sivuston hintadata on Pohjoismaiden ja Baltian maiden sähköpörssissä Nordpoolissa määräytynyt
+                    sähkön spot hinta, johon on laskettu päälle suomen arvonlisävero (24 %).
+                    <h3>
+                    Milloin seuraavan päivän hinnat julkaistaan?
+                    </h3>
+                    Seuraavan päivän hinnat julkaistaan n. klo 13.30 Suomen aikaa. Uudet hinnat päivittyvät tälle
+                    sivustolle pian sen jälkeen.
+                    <h3>
+                    Mitkä tekijät vaikuttavat sähkön hintaan?
+                    </h3>
+                    Hintaan vaikuttavia tekijöitä on lukuisia. Yleisin syy hinnan vaihteluun on vallitseva sää Suomessa,
+                    sekä maissa joista Suomeen ostetaan sähköä. Runsaat sateet etenkin Norjassa lisäävät vesivoiman kapasiteettia ja
+                    laskee hintaa. Kovat tuulet puolestaan lisäävät tuulivoimaloiden tuotantoa. Lisäksi hintaan vaikuttaa
+                    voimalaitosten, erityisesti ydinvoimaloiden huoltokatkot, mitkä aiheuttavat sähkön hintaan piikkejä.
+                    Viimeisimpänä hintaan vaikuttaa tietenkin kysyntä. Kylminä talvina sähkön hinta pysyy selvästi
+                    tavallista korkeammalla, kun lämmitykselle on suurempi tarve. Kesällä puolestaan sähkön hinta
+                    on tyypillisesti alempana, joskin voimalaitosten huoltoja suoritetaan usein kesäaikaan.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
-</div>
-    <table id="stats">
-    <tr>
-        <td id="price_now"><strong>Hinta nyt:</strong> </td>
-        <td id="avg"><strong>7 vrk keskihinta:</strong> </td>
-    </tr>
-</table>
-<div id="container" style="min-width: 310px; margin: 0 auto"><center><img src="load.gif" alt="loading" /></center></div>
-<div id="disclaimer">
-    <small>
-    Hinnat sis. alv 24 %<br />
-    Lähde: nordpoolspot.com
-    </small>
-</div>
-<script src="//code.jquery.com/jquery-1.11.3.min.js"></script>
+<script src="http://code.jquery.com/jquery-1.11.3.min.js"></script>
+<script src="bootstrap/dist/js/bootstrap.min.js"></script>
 <script src="https://code.highcharts.com/stock/highstock.js"></script>
 <script src="https://code.highcharts.com/stock/modules/exporting.js"></script>
-
-
-<script>
-    var avg;
-    function average(callback){
-        $.get( "parse.php?mode=average", function( data ) {
-            avg = data;
-            $("#avg").append(avg + ' snt/kWh');
-            callback();
-        });
-    }
-    function price_now(){
-        $.get( "parse.php?mode=now", function( data ) {
-            var price_now = data;
-            $("#price_now").append(price_now + ' snt/kWh');
-        });
-    }
-
-    var now = new Date();
-    var nowHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours());
-    
-    var today = new Date();
-
-    Date.prototype.stdTimezoneOffset = function() {
-        var jan = new Date(this.getFullYear(), 0, 1);
-        var jul = new Date(this.getFullYear(), 6, 1);
-        return Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
-    }
-
-    Date.prototype.dst = function() {
-        return this.getTimezoneOffset() < this.stdTimezoneOffset();
-    }
-    if (today.dst()) {
-        nowHour = nowHour / 1000 * 1000 + 10800000;
-    } else {
-        nowHour = nowHour / 1000 * 1000 + 7200000;
-    }
-    
-    var chart;
-
-    function function1(callback) {
-        var initialZoom = 1;
-        var isMobile = window.matchMedia("only screen and (max-width: 800px)");
-
-        if (isMobile.matches) {
-            initialZoom = 0;
-        }
-        $.getJSON('parse.php?callback=?', function (data) {
-            Highcharts.setOptions({
-                lang: {
-                    months: ['Tammikuu', 'Helmikuu', 'Maaliskuu', 'Huhtikuu', 'Mai', 'Juin',  'Juillet', 'Août', 'Septembre', 'Octobre', 'Marraskuu', 'Joulukuu'],
-                    weekdays: ['Sunnuntai', 'Maanantai', 'Tiistai', 'Keskiviikko', 'Torstai', 'Perjantai', 'Lauantai'],
-                    shortMonths:['Tammi', 'Helmi', 'Maalis', 'Huhti','Touko', 'Kesä', 'Heinä', 'Elo', 'Syys', 'Loka', 'Marras', 'Joulu']
-                }
-            });
-
-            var dataObject = {
-
-                chart: {
-                    renderTo: 'container',
-                    pinchType: 'none'
-                },
-                legend: {
-                    enabled:false
-                },
-                rangeSelector : {
-                    selected : initialZoom,
-                    buttons: [{
-                        type: 'day',
-                        count: 1,
-                        text: '1 pv'
-                    }, {
-                        type: 'day',
-                        count: 3,
-                        text: '3 pv'
-                    }, {
-                        type: 'day',
-                        count:7,
-                        text: 'viikko'
-                    }]
-                },
-                tooltip: {
-                    xDateFormat: '%A<br />%H:%M %e.%m.%Y',
-                    pointFormat: '{series.name}: {point.y} snt/kWh<br/>',
-                    valueDecimals: 2,
-                    zIndex: 9999
-                },
-                yAxis: [{
-                    title: {
-                        text: 'hinta c/kWh'
-                    },
-                    tickInterval:1,
-                    plotLines: [{
-                        color: 'red',
-                        label: {
-                            text: '7 vrk keskihinta ' + avg + "snt/kWh",
-                            zIndex: 1,
-                            useHTML: true
-                        },
-                        value: avg,
-                        width: '1',
-                        zIndex: 100,
-                        useHTML: true
-
-                    }]
-                },
-                {
-                    linkedTo:0,
-                    opposite:false
-                }],
-                xAxis: {
-                    type: 'datetime'
-                },
-                series: [{
-                    name: 'Hinta',
-                    zIndex: 200,
-                    // color: '#000000',
-                    useHTML: true,
-                    type:'column',
-                    data:data
-                }]
-            };
-
-            chart = new Highcharts.StockChart(dataObject);
-            callback();
-        });
-    }
-
-    function update(){
-        var min = chart.series[0].dataMin;
-        var max = chart.series[0].dataMax;
-
-        for (var i = 0; i < chart.series[0].points.length; i++) {
-            if (chart.series[0].points[i].x == nowHour) {
-                chart.series[0].points[i].update({
-                    color: '#00FFFF'
-                });
-                chart.series[0].points[i].select();
-                chart.series[0].points[i].select();
-            }
-        }
-    }
-
-    average(function() {
-        function1(function() {
-            update();
-            price_now();
-        });
-    });
-
-</script>
+<script src="js/sahko.js"></script>
 <script>
   (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
   (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),

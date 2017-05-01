@@ -13,186 +13,170 @@
  *      0 = 00-01,
  *      ...
  *      23 = 23-00
- *     
+ *
  *  Columns = date
  *      0 = today / tomorrow
  *      ...
  *      7 = max days back
  ************************************/
 
+ require_once("database.php");
+ require_once("date.php");
+
  // CONSTANTS
 define ("VAT", 1.24);
+define ("DAY_RANGE", 14);
+define ("SERVER_TIME_OFFSET", 2);
 define ("NORDPOOL_URL", "http://www.nordpoolspot.com/api/marketdata/page/35?currency=,,EUR,EUR");
+
 class ParseNordPool {
+    /* private members */
+    private $dbData;
+    private $today;
+    private $tomorrowAvailable = false;
+    private $db;
+    private $minToday;
+    private $maxToday;
 
-public $mHourlyData;
-public $today; // 0 if no tomorrow's data. Or 1 if there is tomorrow available
+    function __construct() {}
 
-    function __construct() {
-        $this->parseData();
-        $this->getToday();
-    }
-    
-    /* Updates cache and sets latest available data to global variable for use */
-    function parseData() {
-
-        // If cache does not exist, create file and update
-        if (file_exists ("cache.dat" ) === false) {
-            $this->updateCache();
-        }
-
-        // If last modified over 12 hours ago, update
-        if (time() - filemtime("cache.dat") > 60*60*12) {
-            $this->updateCache();
-        }
-
-        // Get data, update globals
+    public function init() {
+        $this->db = new Database;
+        $this->db->connect();
+        $this->today = DateHelper::dateNow();
+        $this->latestData();
         $this->getData();
+    }
 
-        // Check today
-        $this->getToday();
+    private function round2($number) {
+        return number_format ($number, 2, '.' , ',');
+    }
 
-        // If todays data is latest, try update
-        if ($this->today == 0) {
-            if (time() - filemtime("cache.dat") > 180) {
-                $this->updateCache();
-                $this->getData();
-            }
+    /**
+     * Check if data needs an update and fetch latest data from nordpool and updates the database.
+     */
+    private function getData() {
+
+        // Get date of latest data entry
+        $date = $this->today;
+        if ($this->tomorrowAvailable) {
+            $date = DateHelper::getTomorrow($date);
         }
+
+        /* update table if not updated within an hour or tomorrow. Do not update if tomorrows data
+           is available */
+        if (!$this->tomorrowAvailable && ($this->db->isUpdatedWithinAnHour() === false)) {
+            $data = file_get_contents(NORDPOOL_URL);
+            $npData = json_decode($data);
+            $npData = $npData->data;
+
+            // populate database
+            for ($i = 0; $i <= 7; $i++) {
+                for ($hour = 0; $hour <= 23; $hour++) {
+                    $day =  $npData->Rows[$hour]->Columns[$i]->Name;
+                    $price = $npData->Rows[$hour]->Columns[$i]->Value;
+                    $this->db->addValue($day, $hour, $price);
+                }
+            }
+            // Update latest update field in database
+            $this->db->touchDatabase();
+        }
+        // get data from database and set it to dbData variable
+        $this->dbData = $this->db->getLast2Weeks($date);
     }
 
-    function updateCache(){
-        $data = file_get_contents(NORDPOOL_URL);
-        $file = fopen("cache.dat", "w") or die("Unable to open file!");
-        fwrite($file, $data);
-        fclose($file);
-    }
-    function getData() {
-        $data = file_get_contents("cache.dat");
-        $this->mHourlyData = json_decode($data);
-        $this->mHourlyData = $this->mHourlyData->data;
-    }
-    function getToday() {
-        $day_now = date('j');
-        $day = 0; // Today is first day in the data by default
+    /**
+     * Check if tomorrows prices are already available
+     **/
+    private function latestData() {
+        $this->tomorrowAvailable = false;
+        $date = DateHelper::getTomorrow($this->today);
         // Check if tomorrows data is already available
-        $arr = explode("-", $this->mHourlyData->Rows[0]->Columns[0]->Name);
-        
-        // If so, use today as the second day in the data
-        if ($day_now != $arr[0]) {
-            $day = 1;
+        if ($this->db->findDate($date, 1) != 0) {
+            $this->tomorrowAvailable = true;
         }
-        $this->today = $day;        
-    }
-    
-    /* Gets electricity price for the current hour */
-    function getPriceNow() {
-        $hours_now = date('H');
-        $day_now = $this->today;
-
-        if ($hours_now == 0) {
-            $hours_now = 23;
-            $day_now = $this->today + 1;
-        }
-        $hours_now--;
-        return round(str_replace(",",".", $this->mHourlyData->Rows[$hours_now]->Columns[$day_now]->Value) * VAT / 10, 2);
     }
 
-    // Return array filled with selected day's prices
-    function getDaysDataToArray($day) {
-        $return = array();
-        for ($hour = 0; $hour < 24; $hour++) {
-            $return[] = $this->getPriceForDayAndHour($day, $hour);
-        }
-        return $return;
+    private function getPrice($date, $hour) {
+        if (isset($this->dbData['Rows'][$hour]['Columns'][$date]['Value']))
+            return $this->dbData['Rows'][$hour]['Columns'][$date]['Value'];
+        return 0;
     }
 
-    function getPriceForDayAndHour($day, $hour) {
+    private function getPriceForDayAndHour($date, $hour) {
         // Handle the issue that Finland is 1 hour ahead of Nord Pool time (cet)
+        // today's first hour is yesterdays last in nordpool and todays last is todays 22
+
         if ($hour == 0) {
-            $day++; // go one day back
+            $date = DateHelper::getYesterday($date);
             $hour = 23;
-            if ($day > 7) {
-                // If we go over board, use nearest value.
-                // Todo, use historical data for this (averages yms)
-                return round($this->mHourlyData->Rows[23]->Columns[7]->Value * VAT / 10, 2);
-            }
-        }
-        else {
+        } else {
             $hour--;
         }
-        
-        // This return property of non object
-        return str_replace(",",".", $this->mHourlyData->Rows[$hour]->Columns[$day]->Value) * VAT / 10;
+        $price = $this->getPrice($date, $hour);
+
+        return $this->round2(str_replace(",",".", $price) * VAT / 10);
     }
 
-    function getDateForDayAndHour($day, $hour) {
-        // Handle the issue that Finland is 1 hour ahead of Nord Pool time (cet)
-
-        $date = $this->mHourlyData->Rows[$hour]->Columns[$day]->Name;
+    private function getDateForDayAndHour($date, $hour) {
         $arr = explode("-",$date);
-        $dst = date("I");
-        return mktime($hour + 2 + $dst, 0, 0, $arr[1], $arr[0], $arr[2]);
+        $dst = date("I"); // daylight saving time, 0/1
+
+        return mktime($hour + SERVER_TIME_OFFSET + $dst, 0, 0, $arr[1], $arr[2], $arr[0]); // 20:00:00 01-31-2017
     }
 
-    function get7DayAvg(){
+    /* get 7 day average. If database does no have values for 7 days, escape earlier. */
+    public function get7DayAvg(){
         $total = 0;
-        $divider = 7 * 24;
-        for ($day = $this->today; $day < 7 + $this->today; $day++) {
-            for ($time = 0; $time < 24; $time++) {
-                $total += $this->getPriceForDayAndHour($day, $time);
-            }                
+        $date = $this->today;
+
+        if ($this->tomorrowAvailable)
+            $date = DateHelper::getTomorrow($date);
+
+        for ($day = 0; $day < 7; $day++) {
+            for ($hour = 0; $hour < 24; $hour++) {
+                $price = $this->getPriceForDayAndHour($date, $hour);
+                if ($price == 0) // escape if cant get value
+                    break;
+                $total += $price;
+            }
+            $date = DateHelper::getYesterday($date);
         }
-        return round($total / $divider,2);
+        $divider = $day * 24;
+        return $this->round2($total / $divider, 2);
     }
-    function returnCommaSeparatedRange($start = 0, $end = 6){
-        if ($end > (6 + $this->today)) {
-            $end = 6 + $this->today;
-        }
+
+    /**
+     * Gets price now and todays min and max
+     */
+    public function getPrices() {
+        $results = $this->db->getMinMaxForRange($this->today, $this->today);
+        return array (
+            'min' => $this->round2($results['min'] * VAT / 10),
+            'max' => $this->round2($results['max'] * VAT / 10),
+            'now' => $this->getPriceForDayAndHour($this->today, date('H')),
+            'avg' => $this->get7DayAvg(),
+        );
+    }
+
+    public function returnCommaSeparatedRange() {
+
+        $date = $this->today;
+        if ($this->tomorrowAvailable)
+            $date = DateHelper::getTomorrow($date);
 
         $return = array();
-        for ($day = $start; $day <= $end; $day++) {
+        for ($i = 0; $i < DAY_RANGE + 1; $i++) {
             for ($hour = 0; $hour < 24; $hour++) {
-                $time = $this->getDateForDayAndHour($day,$hour);
+
+                $time = $this->getDateForDayAndHour($date, $hour);
                 // Add three zeros to make it milliseconds
                 $return[] = '[' . $time.'000,' . str_replace(
-                        ",",".",$this->getPriceForDayAndHour($day, $hour)).']';
+                        ",",".",$this->getPriceForDayAndHour($date, $hour)).']';
             }
+            $date = DateHelper::getYesterday($date);
         }
-        asort($return); // sort it so that time
+        asort($return);
         return $return;
     }
 }
-
-$NordPool = new ParseNordPool;
-if(isset($_GET['callback'])) {
-
-    $data = $NordPool->returnCommaSeparatedRange();
-
-    header("content-type: application/json");
-
-    echo $_GET['callback']. '(['.implode(',',$data).'])';
-    //echo '('. json_encode($data) . ')';
-}
-
-if (isset($_GET['mode'])) {
-
-    switch($_GET['mode']){
-        case "average":
-            echo $NordPool->get7DayAvg();
-            break;
-        case "now":
-            echo $NordPool->getPriceNow();
-            break;
-        default:
-            echo ":(";
-    }
-}
-/*
-else {
-echo "nyt " . $NordPool->getPriceNow();
-echo "<br />eilen klo 12 ";
-echo $NordPool->getPriceForDayAndHour(1,12);
-echo "<br />";
-echo "7pv keskiarvo: " . $NordPool->calculate7DayAvg();
-*/

@@ -7,15 +7,8 @@
  * individual value
  ***********************************/
 require_once("date.php");
-
-class Database {
-
-    /* members */
-    private $password = "";
-    private $database = "";
-    private $user = "";
-    private $host = "";
-    private $link = "";
+require_once("database-config.php");
+class Database extends DbConfig {
 
     function connect() {
         $this->link = mysqli_connect($this->host, $this->user, $this->password, $this->database);
@@ -24,8 +17,8 @@ class Database {
     /**
      * Check if there is a database entry from last hour
      */
-    function isUpdatedWithinAnHour() {
-        $timestamp = date("Y-m-d H:i:s", time() - 60 * 60);
+    function isUpdatedWithin($seconds) {
+        $timestamp = date("Y-m-d H:i:s", time() - $seconds);
 
         $query = "SELECT data_updated FROM np_updated WHERE (data_updated = $timestamp)";
         if ($result = $this->link->query($query))
@@ -76,18 +69,20 @@ class Database {
        * skip todays last hour.
        */
       function getMinMaxForRange($date_start, $date_end) {
-          $query = "SELECT MIN(price), MAX(price) FROM np_data
+          $query = "SELECT MIN(price) AS minPrice,
+                           MAX(price) AS maxPrice
+                    FROM np_data
           WHERE (
               (date BETWEEN '$date_start' AND '$date_end' AND hour != '23')
-               OR (($date_start - INTERVAL 1 DAY) AND hour = '23')
+               OR (date = ($date_start - INTERVAL 1 DAY) AND hour = '23')
           )";
           if ($result = $this->link->query($query)) {
                /* free result set */
                $row = mysqli_fetch_array($result);
                $result->close();
                $resultArray = array (
-                   'min' => str_replace(",",".",$row['MIN(price)']),
-                   'max' => str_replace(",",".",$row['MAX(price)'])
+                   'min' => $row['minPrice'],
+                   'max' => $row['maxPrice']
                );
                return $resultArray;
            }
@@ -100,6 +95,26 @@ class Database {
         $date = DateHelper::parseDate($day);
         if ($this->findDate($date, $hour) != 0)
             return;
+
+        $price = str_replace(",",".",$price);
+
         $this->link->query("INSERT INTO np_data (date, hour, price) VALUES ('".$date."', '".$hour."', '".$price."')");
+    }
+    /**
+     * \todo unused
+     */
+    function get4wkAveragesPerHour($date) {
+        $sql = "SELECT AVG(price) AS avgPrice, hour
+                FROM np_data WHERE DATE BETWEEN ('$date' - INTERVAL 28 DAY) AND '$date' GROUP BY hour";
+
+        if ($result = $this->link->query($sql)) {
+             /* free result set */
+
+             while ($row = $result->fetch_array()) {
+                 $resultArray[$row['hour']] = $row['avgPrice'];
+             }
+             $result->close();
+             return $resultArray;
+         }
     }
 }

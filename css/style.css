@@ -6,7 +6,8 @@ body {
     padding-top:5px;
 }
 td {padding-right:1.5em;
-    font-size: 1rem;}
+    font-size: 1rem;
+}
 #container {
     height: 80%;
     max-height:600px;
@@ -39,6 +40,14 @@ td {padding-right:1.5em;
     background-color:#252839;
     color:#b5b5b7;
 }
-#faq h3 {
+#faq h1, #faq h2, #faq h3 {
+    font-size: 1.6em !important;
     color:#d3d3d3;
+}
+#faq p {
+    margin:0;
+    padding:0;
+}
+.loading_image {
+    text-align: center;
 }

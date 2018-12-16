@@ -28,8 +28,23 @@ define ("VAT", 1.24);
 define ("DAY_RANGE", 14);
 define ("SERVER_TIME_OFFSET", 2);
 define ("NORDPOOL_URL", "http://www.nordpoolspot.com/api/marketdata/page/35?currency=,,EUR,EUR");
+define ("REFRESH_RATE", 3600); // seconds
 
-class ParseNordPool {
+// Declare the interface 'iParse'
+interface iParse
+{
+    /**
+     * Gets price now and todays min and max and 7 day avg
+     */
+    public function getPrices();
+
+    /**
+     * Returns array of price information for configured[DAY_RANGE] timeframe
+     */
+    public function returnCommaSeparatedRange();
+}
+
+class ParseNordPool implements iParse {
     /* private members */
     private $dbData;
     private $today;
@@ -38,13 +53,17 @@ class ParseNordPool {
     private $minToday;
     private $maxToday;
 
-    function __construct() {}
-
-    public function init() {
+    /**
+     * Connects to database and gets the latest data. Data is updated if
+     * database is not touched within defined time[REFRESH_RATE] and
+     * tomorrow's data is not yet available.
+     */
+    function __construct() {
         $this->db = new Database;
         $this->db->connect();
         $this->today = DateHelper::dateNow();
         $this->latestData();
+        $this->updateData();
         $this->getData();
     }
 
@@ -53,24 +72,28 @@ class ParseNordPool {
     }
 
     /**
-     * Check if data needs an update and fetch latest data from nordpool and updates the database.
-     */
-    private function getData() {
-
-        // Get date of latest data entry
-        $date = $this->today;
-        if ($this->tomorrowAvailable) {
-            $date = DateHelper::getTomorrow($date);
+     * Check if tomorrows prices are already available
+     **/
+    private function latestData() {
+        $this->tomorrowAvailable = false;
+        $date = DateHelper::getTomorrow($this->today);
+        if ($this->db->findDate($date, 1) != 0) {
+            $this->tomorrowAvailable = true;
         }
+    }
 
-        /* update table if not updated within an hour or tomorrow. Do not update if tomorrows data
-           is available */
-        if (!$this->tomorrowAvailable && ($this->db->isUpdatedWithinAnHour() === false)) {
+    /**
+     * Try updateing the data if tommoro'w data is not yet in the Database
+     * and refresh interval is exceeded
+     */
+    private function updateData() {
+        if (!$this->tomorrowAvailable && ($this->db->isUpdatedWithin(REFRESH_RATE) === false)) {
             $data = file_get_contents(NORDPOOL_URL);
             $npData = json_decode($data);
             $npData = $npData->data;
 
-            // populate database
+            /* fetched data has 7 days of data available. Go it through and
+               update any missing data points to the database */
             for ($i = 0; $i <= 7; $i++) {
                 for ($hour = 0; $hour <= 23; $hour++) {
                     $day =  $npData->Rows[$hour]->Columns[$i]->Name;
@@ -78,23 +101,26 @@ class ParseNordPool {
                     $this->db->addValue($day, $hour, $price);
                 }
             }
-            // Update latest update field in database
+            // Update "latest update" field in the database
             $this->db->touchDatabase();
         }
-        // get data from database and set it to dbData variable
-        $this->dbData = $this->db->getLast2Weeks($date);
     }
 
     /**
-     * Check if tomorrows prices are already available
-     **/
-    private function latestData() {
-        $this->tomorrowAvailable = false;
-        $date = DateHelper::getTomorrow($this->today);
-        // Check if tomorrows data is already available
-        if ($this->db->findDate($date, 1) != 0) {
-            $this->tomorrowAvailable = true;
+     * Returns data for last two weeks from the database
+     */
+    private function getData() {
+
+        $date = $this->today;
+
+        // If tomorrow's data is already in the db, use it as today
+        if ($this->tomorrowAvailable) {
+            $date = DateHelper::getTomorrow($date);
         }
+
+        // get data from database and set it to dbData variable
+        // The site supports showing data for 2 weeks.
+        $this->dbData = $this->db->getLast2Weeks($date);
     }
 
     private function getPrice($date, $hour) {
@@ -115,7 +141,7 @@ class ParseNordPool {
         }
         $price = $this->getPrice($date, $hour);
 
-        return $this->round2(str_replace(",",".", $price) * VAT / 10);
+        return $this->round2($price * VAT / 10);
     }
 
     private function getDateForDayAndHour($date, $hour) {
@@ -126,7 +152,7 @@ class ParseNordPool {
     }
 
     /* get 7 day average. If database does no have values for 7 days, escape earlier. */
-    public function get7DayAvg(){
+    private function get7DayAvg(){
         $total = 0;
         $date = $this->today;
 
@@ -146,9 +172,6 @@ class ParseNordPool {
         return $this->round2($total / $divider, 2);
     }
 
-    /**
-     * Gets price now and todays min and max
-     */
     public function getPrices() {
         $results = $this->db->getMinMaxForRange($this->today, $this->today);
         return array (
@@ -171,12 +194,27 @@ class ParseNordPool {
 
                 $time = $this->getDateForDayAndHour($date, $hour);
                 // Add three zeros to make it milliseconds
-                $return[] = '[' . $time.'000,' . str_replace(
-                        ",",".",$this->getPriceForDayAndHour($date, $hour)).']';
+                $return[] = '[' . $time.'000,' . $this->getPriceForDayAndHour($date, $hour).']';
             }
             $date = DateHelper::getYesterday($date);
         }
         asort($return);
+        return $return;
+    }
+
+    public function get4wkAveragesPerHour() {
+        $return = array();
+        $data = $this->db->get4wkAveragesPerHour($this->today);
+        for ($hour = 0; $hour < 24; $hour++) {
+
+            $dst = date("I"); // daylight saving time, 0/1
+            $time = mktime($hour + SERVER_TIME_OFFSET + $dst, 0, 0, 0, 0, 2000) * 1000;
+            if ($hour == 23) {
+                $time = $time - 60*60*24*1000;
+            }
+
+            $return[$hour] = "[ $time," . $this->round2($data[$hour] * VAT / 10) ."]";
+        }
         return $return;
     }
 }

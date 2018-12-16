@@ -2,8 +2,7 @@
 
 require_once("parse.php");
 
-$NordPool = new ParseNordPool;
-$NordPool->init();
+$NordPool = new ParseNordPool();
 
 if(isset($_GET['callback'])) {
 
